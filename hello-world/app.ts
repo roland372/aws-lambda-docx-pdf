@@ -27,6 +27,8 @@ const S3Client = new S3({
 });
 
 type TInput = {
+	name: string;
+	token: string;
 	inputDocxName: string;
 	outputDocxName: string;
 	outputPdfName: string;
@@ -36,9 +38,23 @@ export const lambdaHandler = async (
 	event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
 	try {
-		const { inputDocxName, outputDocxName, outputPdfName }: TInput = JSON.parse(
-			event.body || '{}'
-		);
+		const {
+			name,
+			token,
+			inputDocxName,
+			outputDocxName,
+			outputPdfName,
+		}: TInput = JSON.parse(event.body || '{}');
+
+		if (!inputDocxName || !outputDocxName || !outputPdfName) {
+			return {
+				statusCode: 400,
+				body: JSON.stringify({
+					message:
+						"Can't convert file to PDF. Missing input or output file names.",
+				}),
+			};
+		}
 
 		const inputConfig = {
 			Key: inputDocxName,
@@ -46,6 +62,7 @@ export const lambdaHandler = async (
 		};
 
 		const inputFile = await S3Client.getObject(inputConfig).promise();
+
 		console.log(`<----- File ${inputDocxName} downloaded ----->`);
 
 		const zip = new PizZip(inputFile.Body as LoadData);
@@ -59,8 +76,8 @@ export const lambdaHandler = async (
 		});
 
 		doc.render({
-			name: 'John',
-			token: 'Great!',
+			name: name || 'John',
+			token: token || 'Great!',
 		});
 
 		const buf = doc.getZip().generate({
@@ -92,11 +109,34 @@ export const lambdaHandler = async (
 			Body: outputPDF,
 		};
 
-		await S3Client.putObject(outputConfig).promise();
-		console.log('<----- PDF file uploaded successfully. ----->');
+		await S3Client.putObject(outputConfig)
+			.promise()
+			.then(() => {
+				console.log('PDF file uploaded successfully.');
+			})
+			.catch(err => {
+				console.log('err: ', err);
+				throw err;
+			});
 
 		await fs.unlink(`../../tmp/${outputPdfName}`);
 		console.log('<----- PDF file deleted from container. ----->');
+
+		S3Client.deleteObject(
+			{
+				Bucket: bucketName,
+				Key: inputDocxName,
+			},
+			err => {
+				if (err) {
+					console.error(`<----- Error deleting file: ${inputDocxName} ${err}`);
+				} else {
+					console.log(
+						`<----- ${inputDocxName} file deleted from bucket. ----->`
+					);
+				}
+			}
+		);
 
 		return {
 			statusCode: 200,
