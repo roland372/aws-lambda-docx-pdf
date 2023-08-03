@@ -13,10 +13,6 @@ import { canBeConvertedToPDF, convertTo } from '@shelf/aws-lambda-libreoffice';
 // }
 
 const bucketName = '00bucket';
-// const inputDocxName = 'input.docx';
-// const outputDocxName = 'output.docx';
-// const outputPdfName = 'output.pdf';
-
 const S3Client = new S3({
 	accessKeyId: 'Q3AM3UQ867SPQQA43P2F',
 	secretAccessKey: 'zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG',
@@ -79,7 +75,6 @@ export const lambdaHandler = async (
 		};
 
 		const inputFile = await S3Client.getObject(inputConfig).promise();
-
 		console.log(`<----- File ${inputDocxName} downloaded ----->`);
 
 		const zip = new PizZip(inputFile.Body as LoadData);
@@ -119,7 +114,6 @@ export const lambdaHandler = async (
 		console.log('<----- File converted to PDF ----->');
 
 		const outputPDF = await fs.readFile(`../../tmp/${outputPdfName}`);
-
 		const outputConfig = {
 			Key: outputPdfName,
 			Bucket: bucketName,
@@ -139,21 +133,21 @@ export const lambdaHandler = async (
 		await fs.unlink(`../../tmp/${outputPdfName}`);
 		console.log('<----- PDF file deleted from container. ----->');
 
-		// S3Client.deleteObject(
-		// 	{
-		// 		Bucket: bucketName,
-		// 		Key: inputDocxName,
-		// 	},
-		// 	err => {
-		// 		if (err) {
-		// 			console.error(`<----- Error deleting file: ${inputDocxName} ${err}`);
-		// 		} else {
-		// 			console.log(
-		// 				`<----- ${inputDocxName} file deleted from bucket. ----->`
-		// 			);
-		// 		}
-		// 	}
-		// );
+		S3Client.deleteObject(
+			{
+				Bucket: bucketName,
+				Key: inputDocxName,
+			},
+			err => {
+				if (err) {
+					console.error(`<----- Error deleting file: ${inputDocxName} ${err}`);
+				} else {
+					console.log(
+						`<----- ${inputDocxName} file deleted from bucket. ----->`
+					);
+				}
+			}
+		);
 
 		await lambda
 			.invoke(params, function (err, data) {
