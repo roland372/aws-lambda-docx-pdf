@@ -1,4 +1,4 @@
-import { S3 } from 'aws-sdk';
+import AWS, { S3 } from 'aws-sdk';
 import PizZip, { LoadData } from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import * as fs from 'fs/promises';
@@ -32,6 +32,7 @@ type TInput = {
 	inputDocxName: string;
 	outputDocxName: string;
 	outputPdfName: string;
+	args: string;
 };
 
 export const lambdaHandler = async (
@@ -45,6 +46,22 @@ export const lambdaHandler = async (
 			outputDocxName,
 			outputPdfName,
 		}: TInput = JSON.parse(event.body || '{}');
+
+		const lambda = new AWS.Lambda({
+			apiVersion: '2015-03-31',
+			endpoint: 'http://172.17.0.1:3001',
+			sslEnabled: false,
+		});
+
+		const dataToSend = {
+			args: ['--files=1.pdf,2.pdf', '--outdir=/tmp', '--filename=test.pdf'],
+		};
+
+		const params = {
+			FunctionName: 'PdfMergerFunction',
+			InvocationType: 'RequestResponse',
+			Payload: JSON.stringify(dataToSend),
+		};
 
 		if (!inputDocxName || !outputDocxName || !outputPdfName) {
 			return {
@@ -122,21 +139,28 @@ export const lambdaHandler = async (
 		await fs.unlink(`../../tmp/${outputPdfName}`);
 		console.log('<----- PDF file deleted from container. ----->');
 
-		S3Client.deleteObject(
-			{
-				Bucket: bucketName,
-				Key: inputDocxName,
-			},
-			err => {
-				if (err) {
-					console.error(`<----- Error deleting file: ${inputDocxName} ${err}`);
-				} else {
-					console.log(
-						`<----- ${inputDocxName} file deleted from bucket. ----->`
-					);
-				}
-			}
-		);
+		// S3Client.deleteObject(
+		// 	{
+		// 		Bucket: bucketName,
+		// 		Key: inputDocxName,
+		// 	},
+		// 	err => {
+		// 		if (err) {
+		// 			console.error(`<----- Error deleting file: ${inputDocxName} ${err}`);
+		// 		} else {
+		// 			console.log(
+		// 				`<----- ${inputDocxName} file deleted from bucket. ----->`
+		// 			);
+		// 		}
+		// 	}
+		// );
+
+		await lambda
+			.invoke(params, function (err, data) {
+				if (err) console.log(err);
+				else console.log(`<----- Data sent successfully ${data} ----->`);
+			})
+			.promise();
 
 		return {
 			statusCode: 200,
