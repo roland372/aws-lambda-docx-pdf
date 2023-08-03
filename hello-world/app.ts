@@ -7,12 +7,15 @@ import { canBeConvertedToPDF, convertTo } from '@shelf/aws-lambda-libreoffice';
 
 //? Postman
 // {
-//     "inputDocxName": "input.docx",
-//     "outputDocxName": "output.docx",
-//     "outputPdfName": "output.pdf"
+// 	"name": "Hello",
+// 	"token": "World",
+// 	"bucketName": "00bucket",
+// 	"inputDocxName": "input.docx",
+// 	"outputDocxName": "output.docx",
+// 	"outputPdfName": "output.pdf"
 // }
 
-const bucketName = '00bucket';
+// const bucketName = '00bucket';
 const S3Client = new S3({
 	accessKeyId: 'Q3AM3UQ867SPQQA43P2F',
 	secretAccessKey: 'zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG',
@@ -25,10 +28,10 @@ const S3Client = new S3({
 type TInput = {
 	name: string;
 	token: string;
+	bucketName: string;
 	inputDocxName: string;
 	outputDocxName: string;
 	outputPdfName: string;
-	args: string;
 };
 
 export const lambdaHandler = async (
@@ -38,6 +41,7 @@ export const lambdaHandler = async (
 		const {
 			name,
 			token,
+			bucketName,
 			inputDocxName,
 			outputDocxName,
 			outputPdfName,
@@ -50,7 +54,9 @@ export const lambdaHandler = async (
 		});
 
 		const dataToSend = {
-			args: ['--files=1.pdf,2.pdf', '--outdir=/tmp', '--filename=test.pdf'],
+			args: [
+				'--files=1.pdf,2.pdf', `--bucket=${bucketName}`, '--filename=test.pdf',
+			],
 		};
 
 		const params = {
@@ -130,24 +136,24 @@ export const lambdaHandler = async (
 				throw err;
 			});
 
-		await fs.unlink(`../../tmp/${outputPdfName}`);
-		console.log('<----- PDF file deleted from container. ----->');
+		// await fs.unlink(`../../tmp/${outputPdfName}`);
+		// console.log('<----- PDF file deleted from container. ----->');
 
-		S3Client.deleteObject(
-			{
-				Bucket: bucketName,
-				Key: inputDocxName,
-			},
-			err => {
-				if (err) {
-					console.error(`<----- Error deleting file: ${inputDocxName} ${err}`);
-				} else {
-					console.log(
-						`<----- ${inputDocxName} file deleted from bucket. ----->`
-					);
-				}
-			}
-		);
+		// S3Client.deleteObject(
+		// 	{
+		// 		Bucket: bucketName,
+		// 		Key: inputDocxName,
+		// 	},
+		// 	err => {
+		// 		if (err) {
+		// 			console.error(`<----- Error deleting file: ${inputDocxName} ${err}`);
+		// 		} else {
+		// 			console.log(
+		// 				`<----- ${inputDocxName} file deleted from bucket. ----->`
+		// 			);
+		// 		}
+		// 	}
+		// );
 
 		await lambda
 			.invoke(params, function (err, data) {
