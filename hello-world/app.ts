@@ -1,10 +1,19 @@
-import { S3 } from 'aws-sdk';
+import AWS, { S3 } from 'aws-sdk';
 import PizZip, { LoadData } from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import * as fs from 'fs/promises';
-import { APIGatewayProxyResult } from 'aws-lambda';
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { canBeConvertedToPDF, convertTo } from '@shelf/aws-lambda-libreoffice';
-import { uuid } from 'uuidv4';
+
+//? Postman
+// {
+// 	"name": "Hello",
+// 	"token": "World",
+// 	"bucketName": "00bucket",
+// 	"inputDocxName": "input.docx",
+// 	"outputDocxName": "output.docx",
+// 	"outputPdfName": "output.pdf"
+// }
 
 const S3Client = new S3({
 	accessKeyId: 'Q3AM3UQ867SPQQA43P2F',
@@ -20,16 +29,43 @@ type TInput = {
 	token: string;
 	bucketName: string;
 	inputDocxName: string;
+	outputDocxName: string;
+	outputPdfName: string;
 };
 
+//! sam local start-api
 export const lambdaHandler = async (
-	event: TInput
+	event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
 	try {
-		const { name, token, bucketName, inputDocxName }: TInput = event;
-		const outputFile = uuid();
+		const {
+			name,
+			token,
+			bucketName,
+			inputDocxName,
+			outputDocxName,
+			outputPdfName,
+		}: TInput = JSON.parse(event.body || '{}');
 
-		if (!name || !token || !bucketName || !inputDocxName) {
+		const lambda = new AWS.Lambda({
+			apiVersion: '2015-03-31',
+			endpoint: 'http://172.17.0.1:3001',
+			sslEnabled: false,
+		});
+
+		const dataToSend = {
+			args: [
+				'--files=1.pdf,2.pdf', `--bucket=${bucketName}`, '--filename=test.pdf',
+			],
+		};
+
+		const params = {
+			FunctionName: 'PdfMergerFunction',
+			InvocationType: 'RequestResponse',
+			Payload: JSON.stringify(dataToSend),
+		};
+
+		if (!inputDocxName || !outputDocxName || !outputPdfName) {
 			return {
 				statusCode: 400,
 				body: JSON.stringify({
@@ -67,10 +103,10 @@ export const lambdaHandler = async (
 			compression: 'DEFLATE',
 		});
 
-		await fs.writeFile(`../../tmp/${outputFile}.docx`, buf);
-		console.log(`<----- File filled and saved as ${outputFile}.docx ----->`);
+		await fs.writeFile(`../../tmp/${outputDocxName}`, buf);
+		console.log(`<----- File filled and saved as ${outputDocxName} ----->`);
 
-		if (!canBeConvertedToPDF(`${outputFile}.docx`)) {
+		if (!canBeConvertedToPDF(outputDocxName)) {
 			console.log("<----- Can't convert file to PDF ----->");
 			return {
 				statusCode: 400,
@@ -80,12 +116,12 @@ export const lambdaHandler = async (
 			};
 		}
 
-		await convertTo(`${outputFile}.docx`, 'pdf');
+		await convertTo(outputDocxName, 'pdf');
 		console.log('<----- File converted to PDF ----->');
 
-		const outputPDF = await fs.readFile(`../../tmp/${outputFile}.pdf`);
+		const outputPDF = await fs.readFile(`../../tmp/${outputPdfName}`);
 		const outputConfig = {
-			Key: `${outputFile}.pdf`,
+			Key: outputPdfName,
 			Bucket: bucketName,
 			Body: outputPDF,
 		};
@@ -100,7 +136,7 @@ export const lambdaHandler = async (
 				throw err;
 			});
 
-		await fs.unlink(`../../tmp/${outputFile}.pdf`);
+		await fs.unlink(`../../tmp/${outputPdfName}`);
 		console.log('<----- PDF file deleted from container. ----->');
 
 		S3Client.deleteObject(
@@ -119,12 +155,17 @@ export const lambdaHandler = async (
 			}
 		);
 
+		await lambda
+			.invoke(params, function (err, data) {
+				if (err) console.log(err);
+				else console.log(`<----- Data sent successfully ${data} ----->`);
+			})
+			.promise();
+
 		return {
 			statusCode: 200,
 			body: JSON.stringify({
-				function: 'LambdaFillerFunction',
-				message: `File converted and saved successfully, converted file: ${outputFile}`,
-				fileName: `${outputFile}.pdf`,
+				message: 'File converted and saved successfully',
 			}),
 			headers: { 'content-type': 'application/json' },
 		};
